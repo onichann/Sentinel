@@ -129,7 +129,7 @@ public class DashboardConfig {
     }
 
     public static String getConfigNacosServer() {
-        return getConfigStr(CONFIG_NACOS_NAMESPACE);
+        return getConfigStr(CONFIG_NACOS_SERVER);
     }
 
     public static String getConfigNacosNamespace() {
