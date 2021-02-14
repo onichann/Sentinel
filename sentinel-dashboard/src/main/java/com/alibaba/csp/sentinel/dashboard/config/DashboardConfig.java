@@ -15,12 +15,12 @@
  */
 package com.alibaba.csp.sentinel.dashboard.config;
 
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.math.NumberUtils;
 import org.springframework.lang.NonNull;
+
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * <p>Dashboard local config support.</p>
@@ -36,6 +36,16 @@ import org.springframework.lang.NonNull;
 public class DashboardConfig {
 
     public static final int DEFAULT_MACHINE_HEALTHY_TIMEOUT_MS = 60_000;
+
+    /**
+     * CONFIG_NACOS_SERVER
+     */
+    public static final String CONFIG_NACOS_SERVER = "sentinel.dashboard.nacos.server";
+
+    /**
+     * CONFIG_NACOS_NAMESPACE
+     */
+    public static final String CONFIG_NACOS_NAMESPACE = "sentinel.dashboard.nacos.namespace";
 
     /**
      * Login username
@@ -116,6 +126,14 @@ public class DashboardConfig {
 
     public static String getAuthPassword() {
         return getConfigStr(CONFIG_AUTH_PASSWORD);
+    }
+
+    public static String getConfigNacosServer() {
+        return getConfigStr(CONFIG_NACOS_NAMESPACE);
+    }
+
+    public static String getConfigNacosNamespace() {
+        return getConfigStr(CONFIG_NACOS_NAMESPACE);
     }
 
     public static int getHideAppNoMachineMillis() {

@@ -15,28 +15,25 @@
  */
 package com.alibaba.csp.sentinel.dashboard.client;
 
-import java.io.UnsupportedEncodingException;
-import java.net.URLEncoder;
-import java.nio.charset.Charset;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Optional;
-import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.stream.Collectors;
-
 import com.alibaba.csp.sentinel.adapter.gateway.common.rule.GatewayFlowRule;
 import com.alibaba.csp.sentinel.command.CommandConstants;
-import com.alibaba.csp.sentinel.config.SentinelConfig;
 import com.alibaba.csp.sentinel.command.vo.NodeVo;
+import com.alibaba.csp.sentinel.config.SentinelConfig;
+import com.alibaba.csp.sentinel.dashboard.datasource.entity.SentinelVersion;
 import com.alibaba.csp.sentinel.dashboard.datasource.entity.gateway.ApiDefinitionEntity;
 import com.alibaba.csp.sentinel.dashboard.datasource.entity.gateway.GatewayFlowRuleEntity;
+import com.alibaba.csp.sentinel.dashboard.datasource.entity.rule.*;
+import com.alibaba.csp.sentinel.dashboard.discovery.AppManagement;
+import com.alibaba.csp.sentinel.dashboard.domain.cluster.ClusterClientInfoVO;
+import com.alibaba.csp.sentinel.dashboard.domain.cluster.config.ClusterClientConfig;
+import com.alibaba.csp.sentinel.dashboard.domain.cluster.config.ServerFlowConfig;
+import com.alibaba.csp.sentinel.dashboard.domain.cluster.config.ServerTransportConfig;
+import com.alibaba.csp.sentinel.dashboard.domain.cluster.state.ClusterServerStateVO;
+import com.alibaba.csp.sentinel.dashboard.domain.cluster.state.ClusterStateSimpleEntity;
+import com.alibaba.csp.sentinel.dashboard.rule.DynamicRuleProvider;
+import com.alibaba.csp.sentinel.dashboard.rule.DynamicRulePublisher;
 import com.alibaba.csp.sentinel.dashboard.util.AsyncUtils;
+import com.alibaba.csp.sentinel.dashboard.util.VersionUtils;
 import com.alibaba.csp.sentinel.slots.block.Rule;
 import com.alibaba.csp.sentinel.slots.block.authority.AuthorityRule;
 import com.alibaba.csp.sentinel.slots.block.degrade.DegradeRule;
@@ -46,22 +43,6 @@ import com.alibaba.csp.sentinel.slots.system.SystemRule;
 import com.alibaba.csp.sentinel.util.AssertUtil;
 import com.alibaba.csp.sentinel.util.StringUtil;
 import com.alibaba.fastjson.JSON;
-import com.alibaba.csp.sentinel.dashboard.datasource.entity.SentinelVersion;
-import com.alibaba.csp.sentinel.dashboard.datasource.entity.rule.AuthorityRuleEntity;
-import com.alibaba.csp.sentinel.dashboard.datasource.entity.rule.DegradeRuleEntity;
-import com.alibaba.csp.sentinel.dashboard.datasource.entity.rule.FlowRuleEntity;
-import com.alibaba.csp.sentinel.dashboard.datasource.entity.rule.ParamFlowRuleEntity;
-import com.alibaba.csp.sentinel.dashboard.datasource.entity.rule.RuleEntity;
-import com.alibaba.csp.sentinel.dashboard.datasource.entity.rule.SystemRuleEntity;
-import com.alibaba.csp.sentinel.dashboard.discovery.AppManagement;
-import com.alibaba.csp.sentinel.dashboard.domain.cluster.ClusterClientInfoVO;
-import com.alibaba.csp.sentinel.dashboard.domain.cluster.state.ClusterServerStateVO;
-import com.alibaba.csp.sentinel.dashboard.domain.cluster.state.ClusterStateSimpleEntity;
-import com.alibaba.csp.sentinel.dashboard.domain.cluster.config.ClusterClientConfig;
-import com.alibaba.csp.sentinel.dashboard.domain.cluster.config.ServerFlowConfig;
-import com.alibaba.csp.sentinel.dashboard.domain.cluster.config.ServerTransportConfig;
-import com.alibaba.csp.sentinel.dashboard.util.VersionUtils;
-
 import org.apache.http.Consts;
 import org.apache.http.HttpResponse;
 import org.apache.http.NameValuePair;
@@ -81,8 +62,18 @@ import org.apache.http.util.EntityUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
+
+import java.io.UnsupportedEncodingException;
+import java.net.URLEncoder;
+import java.nio.charset.Charset;
+import java.util.*;
+import java.util.Map.Entry;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
 
 /**
  * Communicate with Sentinel client.
@@ -133,6 +124,34 @@ public class SentinelApiClient {
     
     @Autowired
     private AppManagement appManagement;
+
+    @Autowired(required = false)
+    @Qualifier("flowRuleNacosProvider")
+    private DynamicRuleProvider<List<FlowRuleEntity>> flowRuleNacosProvider;
+
+    @Autowired(required = false)
+    @Qualifier("flowRuleNacosPublisher")
+    private DynamicRulePublisher<List<FlowRuleEntity>> flowRuleNacosPublisher;
+
+    @Autowired(required = false)
+    private DynamicRuleProvider<List<DegradeRuleEntity>> degradeRuleNacosProvider;
+    @Autowired(required = false)
+    private DynamicRulePublisher<List<DegradeRuleEntity>> degradeRuleNacosPublisher;
+
+    @Autowired(required = false)
+    private DynamicRuleProvider<List<SystemRuleEntity>> systemRuleNacosProvider;
+    @Autowired(required = false)
+    private DynamicRulePublisher<List<SystemRuleEntity>> systemRuleNacosPublisher;
+
+    @Autowired(required = false)
+    private DynamicRuleProvider<List<AuthorityRuleEntity>> authorityRuleNacosProvider;
+    @Autowired(required = false)
+    private DynamicRulePublisher<List<AuthorityRuleEntity>> authorityRuleNacosPublisher;
+
+    @Autowired(required = false)
+    private DynamicRuleProvider<List<ParamFlowRuleEntity>> paramFlowRuleNacosProvider;
+    @Autowired(required = false)
+    private DynamicRulePublisher<List<ParamFlowRuleEntity>> paramFlowRuleNacosPublisher;
 
     public SentinelApiClient() {
         IOReactorConfig ioConfig = IOReactorConfig.custom().setConnectTimeout(3000).setSoTimeout(10000)
@@ -390,6 +409,15 @@ public class SentinelApiClient {
             return true;
         }
         try {
+            if (SYSTEM_RULE_TYPE.equals(type) && systemRuleNacosPublisher != null) {
+                systemRuleNacosPublisher.publish(app, (List<SystemRuleEntity>) entities);
+            } else if (DEGRADE_RULE_TYPE.equals(type) && degradeRuleNacosPublisher != null) {
+                degradeRuleNacosPublisher.publish(app, (List<DegradeRuleEntity>) entities);
+            } else if (AUTHORITY_TYPE.equals(type) && authorityRuleNacosPublisher != null) {
+                authorityRuleNacosPublisher.publish(app, (List<AuthorityRuleEntity>) entities);
+            } else if (FLOW_RULE_TYPE.equals(type) && flowRuleNacosPublisher != null) {
+                flowRuleNacosPublisher.publish(app, (List<FlowRuleEntity>) entities);
+            }
             AssertUtil.notEmpty(app, "Bad app name");
             AssertUtil.notEmpty(ip, "Bad machine IP");
             AssertUtil.isTrue(port > 0, "Bad machine port");
@@ -458,6 +486,14 @@ public class SentinelApiClient {
     }
 
     public List<FlowRuleEntity> fetchFlowRuleOfMachine(String app, String ip, int port) {
+        //  如果不为空就直接从nacos 中查
+        if (flowRuleNacosProvider != null) {
+            try {
+                return flowRuleNacosProvider.getRules(app);
+            } catch (Exception e) {
+                logger.warn("error when get rules from nacos : {} ", e);
+            }
+        }
         List<FlowRule> rules = fetchRules(ip, port, FLOW_RULE_TYPE, FlowRule.class);
         if (rules != null) {
             return rules.stream().map(rule -> FlowRuleEntity.fromFlowRule(app, ip, port, rule))
@@ -468,6 +504,13 @@ public class SentinelApiClient {
     }
 
     public List<DegradeRuleEntity> fetchDegradeRuleOfMachine(String app, String ip, int port) {
+        if (degradeRuleNacosProvider != null) {
+            try {
+                return degradeRuleNacosProvider.getRules(app);
+            } catch (Exception e) {
+                logger.warn("error when get rules from nacos : {} ", e);
+            }
+        }
         List<DegradeRule> rules = fetchRules(ip, port, DEGRADE_RULE_TYPE, DegradeRule.class);
         if (rules != null) {
             return rules.stream().map(rule -> DegradeRuleEntity.fromDegradeRule(app, ip, port, rule))
@@ -478,6 +521,13 @@ public class SentinelApiClient {
     }
 
     public List<SystemRuleEntity> fetchSystemRuleOfMachine(String app, String ip, int port) {
+        if (systemRuleNacosProvider != null) {
+            try {
+                return systemRuleNacosProvider.getRules(app);
+            } catch (Exception e) {
+                logger.warn("error when get rules from nacos : {} ", e);
+            }
+        }
         List<SystemRule> rules = fetchRules(ip, port, SYSTEM_RULE_TYPE, SystemRule.class);
         if (rules != null) {
             return rules.stream().map(rule -> SystemRuleEntity.fromSystemRule(app, ip, port, rule))
@@ -501,6 +551,15 @@ public class SentinelApiClient {
             AssertUtil.notEmpty(app, "Bad app name");
             AssertUtil.notEmpty(ip, "Bad machine IP");
             AssertUtil.isTrue(port > 0, "Bad machine port");
+            if (paramFlowRuleNacosProvider != null) {
+                try {
+                    CompletableFuture<List<ParamFlowRuleEntity>> completableFuture = new CompletableFuture<>();
+                    completableFuture.obtrudeValue(paramFlowRuleNacosProvider.getRules(app));
+                    return completableFuture;
+                } catch (Exception e) {
+                    logger.warn("error when get rules from nacos : {} ", e);
+                }
+            }
             return fetchItemsAsync(ip, port, GET_PARAM_RULE_PATH, null, ParamFlowRule.class)
                 .thenApply(rules -> rules.stream()
                     .map(e -> ParamFlowRuleEntity.fromAuthorityRule(app, ip, port, e))
@@ -527,6 +586,13 @@ public class SentinelApiClient {
         AssertUtil.isTrue(port > 0, "Bad machine port");
         Map<String, String> params = new HashMap<>(1);
         params.put("type", AUTHORITY_TYPE);
+        if (authorityRuleNacosProvider != null) {
+            try {
+                return authorityRuleNacosProvider.getRules(app);
+            } catch (Exception e) {
+                logger.warn("error when get rules from nacos : {} ", e);
+            }
+        }
         List<AuthorityRule> rules = fetchRules(ip, port, AUTHORITY_TYPE, AuthorityRule.class);
         return Optional.ofNullable(rules).map(r -> r.stream()
                     .map(e -> AuthorityRuleEntity.fromAuthorityRule(app, ip, port, e))
@@ -549,6 +615,13 @@ public class SentinelApiClient {
     }
 
     public CompletableFuture<Void> setFlowRuleOfMachineAsync(String app, String ip, int port, List<FlowRuleEntity> rules) {
+        if (flowRuleNacosPublisher != null) {
+            try {
+                flowRuleNacosPublisher.publish(app, rules);
+            } catch (Exception e) {
+                logger.warn("error when push rules to nacos : {} ", e);
+            }
+        }
         return setRulesAsync(app, ip, port, FLOW_RULE_TYPE, rules);
     }
 
@@ -592,6 +665,13 @@ public class SentinelApiClient {
             return AsyncUtils.newFailedFuture(new IllegalArgumentException("Invalid parameter"));
         }
         try {
+            if (paramFlowRuleNacosPublisher != null) {
+                try {
+                    paramFlowRuleNacosPublisher.publish(app, rules);
+                } catch (Exception e) {
+                    logger.warn("error when push rules to nacos : {} ", e);
+                }
+            }
             String data = JSON.toJSONString(
                 rules.stream().map(ParamFlowRuleEntity::getRule).collect(Collectors.toList())
             );
